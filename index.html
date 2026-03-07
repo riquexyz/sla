@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Tráfego e Detecção de Acidentes</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <!-- Container Principal Centralizado -->
+    <div class="main-container">
+        
+        <!-- O "Monitor" de Segurança -->
+        <div class="monitor-frame">
+            <div class="monitor-header">
+                <span class="status-light"></span>
+                <span class="recording-text">REC ●</span>
+                <span class="camera-label" id="camera-label">CÂMERA 01</span>
+            </div>
+
+            <!-- Área da Simulação -->
+            <div class="simulation-area" id="simulation-area">
+                <!-- A Rua será gerada via CSS/JS -->
+                <div class="road">
+                    <div class="lane-marker"></div>
+                </div>
+                
+                <!-- Elementos que serão injetados pelo JS -->
+                <div id="cars-container"></div>
+                <div id="accident-effects" class="hidden"></div>
+                <div id="drone-icon" class="hidden">🚁</div>
+            </div>
+
+            <!-- Interface de Controle -->
+            <div class="control-panel">
+                <button id="btn-camera" class="active">Câmera de Segurança</button>
+                <button id="btn-drone">Drone</button>
+            </div>
+
+            <!-- Painel de Status / Logs -->
+            <div class="status-panel">
+                <div id="alert-box" class="alert-box hidden">
+                    <h3>⚠️ ACIDENTE DETECTADO!</h3>
+                    <p>Colisão confirmada. Enviando alerta...</p>
+                </div>
+                <div id="ambulance-box" class="alert-box ambulance hidden">
+                    <h3>🚑 AMBULÂNCIA ENVIADA</h3>
+                    <p>Equipe de resgate a caminho do local.</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <p>Simulação Automática: Os carros iniciarão em 3 segundos.</p>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
