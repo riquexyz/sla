@@ -8,6 +8,10 @@ let collisionOccurred = false;
 let ambulanceActive = false;
 let victimStatus = '';
 
+// Variáveis para controle de áudio
+let crashAudio = null;
+let sireneAudio = null;
+
 // Elementos da interface
 const reportLog = document.getElementById('reportLog');
 const victimStatusText = document.getElementById('victimStatusText');
@@ -28,6 +32,67 @@ let ambulance = {
 
 // Histórico de eventos
 let eventLog = [];
+
+// Inicializar áudios
+function initAudios() {
+    try {
+        crashAudio = document.getElementById('crashSound');
+        sireneAudio = document.getElementById('sireneSound');
+        
+        // Configurar volume
+        if (crashAudio) crashAudio.volume = 0.7;
+        if (sireneAudio) sireneAudio.volume = 0.4;
+        
+        console.log('Áudios inicializados');
+    } catch (error) {
+        console.log('Erro ao inicializar áudios:', error);
+    }
+}
+
+// Tocar som de colisão
+function playCrashSound() {
+    try {
+        if (crashAudio) {
+            crashAudio.currentTime = 0;
+            crashAudio.play().catch(e => console.log('Erro ao tocar crash:', e));
+        }
+    } catch (error) {
+        console.log('Erro ao tocar crash:', error);
+    }
+}
+
+// Tocar sirene
+function playSirene() {
+    try {
+        if (sireneAudio) {
+            sireneAudio.currentTime = 0;
+            sireneAudio.play().catch(e => console.log('Erro ao tocar sirene:', e));
+        }
+    } catch (error) {
+        console.log('Erro ao tocar sirene:', error);
+    }
+}
+
+// Parar sirene
+function stopSirene() {
+    try {
+        if (sireneAudio) {
+            sireneAudio.pause();
+            sireneAudio.currentTime = 0;
+        }
+    } catch (error) {
+        console.log('Erro ao parar sirene:', error);
+    }
+}
+
+// Parar todos os sons
+function stopAllSounds() {
+    stopSirene();
+    if (crashAudio) {
+        crashAudio.pause();
+        crashAudio.currentTime = 0;
+    }
+}
 
 // Atualizar tempo
 function updateTime() {
@@ -79,6 +144,9 @@ function checkCollision() {
             victimStatus = generateVictimStatus();
             victimStatusText.textContent = victimStatus;
             
+            // Tocar som de colisão
+            playCrashSound();
+            
             addEvent('🚨 COLISÃO DETECTADA no cruzamento!', 'collision');
             addEvent('🚗 Veículo A (horizontal) avançou o cruzamento', 'collision');
             addEvent('🚙 Veículo B (vertical) trafegava na via perpendicular', 'collision');
@@ -103,6 +171,9 @@ function callAmbulance() {
         ambulance.x = 710;
         ambulance.y = 515;
         ambulance.orientation = 'horizontal';
+        
+        // Tocar sirene quando a ambulância for acionada
+        playSirene();
         
         addEvent('🚑 AMBULÂNCIA acionada - Saindo do estacionamento', 'ambulance');
     }
@@ -189,6 +260,10 @@ function moveAmbulance() {
                 } else {
                     ambulance.active = false;
                     ambulanceActive = false;
+                    
+                    // Parar sirene quando estacionar
+                    stopSirene();
+                    
                     addEvent('🏥 Ambulância estacionada no hospital', 'system');
                 }
             }
@@ -243,8 +318,8 @@ function drawEstablishments() {
     ctx.fillRect(720, 140, 25, 25);
     ctx.font = 'bold 12px "Courier New"';
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText('REST', 685, 135);
-    ctx.fillText('🍔', 715, 134);
+    ctx.fillText('REST', 685, 180);
+    ctx.fillText('🍔', 710, 200);
     
     // Loja de conveniência
     ctx.fillStyle = '#4169E1';
@@ -256,7 +331,7 @@ function drawEstablishments() {
     ctx.fillRect(75, 430, 30, 25);
     ctx.font = 'bold 10px "Courier New"';
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText('24H', 45, 410);
+    ctx.fillText('24H', 45, 450);
     
     // HOSPITAL COM ESTACIONAMENTO
     ctx.fillStyle = '#FFFFFF';
@@ -274,7 +349,7 @@ function drawEstablishments() {
     // Placa do hospital
     ctx.font = 'bold 12px "Courier New"';
     ctx.fillStyle = '#FF0000';
-    ctx.fillText('HOSP', 680, 402);
+    ctx.fillText('HOSP', 680, 460);
     
     // ESTACIONAMENTO
     ctx.fillStyle = '#444444';
@@ -550,6 +625,9 @@ function restartSimulation() {
     ambulanceActive = false;
     ambulance.active = false;
     
+    // Parar todos os sons ao reiniciar
+    stopAllSounds();
+    
     car1 = { x: 100, y: 280, speed: 2, active: true, color: '#FF0000' };
     car2 = { x: 380, y: 100, speed: 2, active: true, color: '#0000FF' };
     
@@ -577,8 +655,13 @@ function simulate() {
     requestAnimationFrame(simulate);
 }
 
+// Event listeners
 restartBtn.addEventListener('click', restartSimulation);
 
+// Inicializar áudios quando a página carregar
+window.addEventListener('load', initAudios);
+
+// Iniciar simulação
 addEvent('🚁 Sistema de monitoramento ativado - Modo Drone', 'system');
 simulate();
 setInterval(updateTime, 1000);
