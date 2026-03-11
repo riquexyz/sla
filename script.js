@@ -12,80 +12,164 @@ let victimStatus = '';
 let crashAudio = null;
 let sireneAudio = null;
 
+// Sistema de Fumaça
+let smokeParticles = [];
+
+class SmokeParticle {
+    constructor(x, y) {
+        this.x = x + (Math.random() - 0.5) * 30;
+        this.y = y + (Math.random() - 0.5) * 20;
+        this.size = Math.random() * 8 + 3;
+        this.speedY = Math.random() * 0.8 + 0.3;
+        this.speedX = (Math.random() - 0.5) * 0.5;
+        this.opacity = 0.7 + Math.random() * 0.3;
+        this.life = 1.0;
+        this.decay = 0.002 + Math.random() * 0.003;
+    }
+    
+    update() {
+        this.y -= this.speedY;
+        this.x += this.speedX;
+        this.life -= this.decay;
+        this.opacity = this.life * 0.7;
+        this.size += 0.1;
+        this.speedX *= 0.99;
+    }
+    
+    draw() {
+        if (this.life <= 0) return;
+        
+        ctx.save();
+        ctx.globalAlpha = this.opacity;
+        
+        const gradient = ctx.createRadialGradient(
+            this.x, this.y, 0,
+            this.x, this.y, this.size
+        );
+        gradient.addColorStop(0, 'rgba(180, 180, 180, 0.8)');
+        gradient.addColorStop(0.5, 'rgba(120, 120, 120, 0.5)');
+        gradient.addColorStop(1, 'rgba(80, 80, 80, 0.2)');
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
 // Elementos da interface
 const reportLog = document.getElementById('reportLog');
 const victimStatusText = document.getElementById('victimStatusText');
 const currentTimeDisplay = document.getElementById('currentTime');
 const restartBtn = document.getElementById('restartBtn');
 
-// Posições dos objetos
-let car1 = { x: 100, y: 280, speed: 2, active: true, color: '#FF0000' }; // Carro horizontal (vermelho)
-let car2 = { x: 380, y: 100, speed: 2, active: true, color: '#0000FF' }; // Carro vertical (azul)
+// ===== CARROS RANDOMIZADOS =====
+const carColors = ['#FF0000', '#0000FF', '#00FF00', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080'];
+const carTypes = ['Sedan', 'Hatch', 'SUV', 'Esportivo', 'Picape'];
+
+function randomCar() {
+    return {
+        color: carColors[Math.floor(Math.random() * carColors.length)],
+        type: carTypes[Math.floor(Math.random() * carTypes.length)]
+    };
+}
+
+let car1 = { 
+    x: 100, y: 280, speed: 1.5 + Math.random(), active: true, 
+    color: carColors[Math.floor(Math.random() * carColors.length)],
+    type: carTypes[Math.floor(Math.random() * carTypes.length)]
+};
+
+let car2 = { 
+    x: 380, y: 100, speed: 1.5 + Math.random(), active: true, 
+    color: carColors[Math.floor(Math.random() * carColors.length)],
+    type: carTypes[Math.floor(Math.random() * carTypes.length)]
+};
+
+// Ambulância
 let ambulance = { 
     x: 0, 
     y: 0, 
     active: false, 
     state: 'coming',
     orientation: 'horizontal',
-    stage: 'exiting' // 'exiting', 'onRoad', 'approaching', 'stopped', 'returning', 'parking'
+    stage: 'exiting'
 };
 
 // Histórico de eventos
 let eventLog = [];
 
-// Inicializar áudios
+// ===== FUNÇÕES DE ÁUDIO =====
 function initAudios() {
     try {
         crashAudio = document.getElementById('crashSound');
         sireneAudio = document.getElementById('sireneSound');
         
-        // Configurar volume
-        if (crashAudio) crashAudio.volume = 0.7;
-        if (sireneAudio) sireneAudio.volume = 0.4;
-        
-        console.log('Áudios inicializados');
-    } catch (error) {
-        console.log('Erro ao inicializar áudios:', error);
-    }
-}
-
-// Tocar som de colisão
-function playCrashSound() {
-    try {
         if (crashAudio) {
-            crashAudio.currentTime = 0;
-            crashAudio.play().catch(e => console.log('Erro ao tocar crash:', e));
+            crashAudio.volume = 0.7;
+            crashAudio.load(); // Forçar carregamento
+            console.log('🎵 Áudio de crash carregado:', crashAudio);
         }
+        
+        if (sireneAudio) {
+            sireneAudio.volume = 0.1;
+            sireneAudio.load(); // Forçar carregamento
+            console.log('🎵 Áudio de sirene carregado:', sireneAudio);
+        }
+        
+        console.log('✅ Sistema de áudio inicializado');
     } catch (error) {
-        console.log('Erro ao tocar crash:', error);
+        console.error('❌ Erro ao inicializar áudios:', error);
     }
 }
 
-// Tocar sirene
+function playCrashSound() {
+    if (crashAudio) {
+        // Parar se estiver tocando e reiniciar
+        crashAudio.pause();
+        crashAudio.currentTime = 0;
+        
+        // Tocar
+        let playPromise = crashAudio.play();
+        
+        if (playPromise !== undefined) {
+            playPromise.then(() => {
+                console.log('✅ Som de crash tocando');
+            }).catch(error => {
+                console.error('❌ Erro ao tocar crash:', error);
+                // Tentar tocar novamente após interação do usuário
+                document.addEventListener('click', function playOnClick() {
+                    crashAudio.play();
+                    document.removeEventListener('click', playOnClick);
+                }, { once: true });
+            });
+        }
+    } else {
+        console.error('❌ crashAudio não está inicializado');
+    }
+}
+
 function playSirene() {
-    try {
-        if (sireneAudio) {
-            sireneAudio.currentTime = 0;
-            sireneAudio.play().catch(e => console.log('Erro ao tocar sirene:', e));
+    if (sireneAudio) {
+        sireneAudio.loop = true;
+        let playPromise = sireneAudio.play();
+        
+        if (playPromise !== undefined) {
+            playPromise.catch(error => {
+                console.error('❌ Erro ao tocar sirene:', error);
+            });
         }
-    } catch (error) {
-        console.log('Erro ao tocar sirene:', error);
     }
 }
 
-// Parar sirene
 function stopSirene() {
-    try {
-        if (sireneAudio) {
-            sireneAudio.pause();
-            sireneAudio.currentTime = 0;
-        }
-    } catch (error) {
-        console.log('Erro ao parar sirene:', error);
+    if (sireneAudio) {
+        sireneAudio.pause();
+        sireneAudio.currentTime = 0;
     }
 }
 
-// Parar todos os sons
 function stopAllSounds() {
     stopSirene();
     if (crashAudio) {
@@ -94,7 +178,18 @@ function stopAllSounds() {
     }
 }
 
-// Atualizar tempo
+// Função para testar áudio manualmente
+window.testarCrash = function() {
+    console.log('🔊 Testando áudio de crash...');
+    playCrashSound();
+};
+
+window.testarSirene = function() {
+    console.log('🔊 Testando áudio de sirene...');
+    playSirene();
+    setTimeout(stopSirene, 3000);
+};
+
 function updateTime() {
     const now = new Date();
     const hours = String(now.getHours()).padStart(2, '0');
@@ -103,13 +198,9 @@ function updateTime() {
     currentTimeDisplay.textContent = `${hours}:${minutes}:${seconds}`;
 }
 
-// Adicionar evento ao log
 function addEvent(message, type = 'system') {
     const now = new Date();
     const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
-    
-    const eventEntry = { time, message, type };
-    eventLog.push(eventEntry);
     
     const logEntry = document.createElement('div');
     logEntry.className = `log-entry ${type}`;
@@ -119,7 +210,6 @@ function addEvent(message, type = 'system') {
     reportLog.scrollTop = reportLog.scrollHeight;
 }
 
-// Gerar status da vítima aleatório
 function generateVictimStatus() {
     const statuses = [
         'Ferimentos leves - Consciente',
@@ -131,25 +221,32 @@ function generateVictimStatus() {
     return statuses[Math.floor(Math.random() * statuses.length)];
 }
 
-// Verificar colisão
+// Criar fumaça na colisão
+function createCollisionSmoke() {
+    for (let i = 0; i < 20; i++) {
+        smokeParticles.push(new SmokeParticle(380, 280));
+    }
+}
+
+// Verificar colisão (SEM som antecipado)
 function checkCollision() {
     if (!collisionOccurred && car1.active && car2.active) {
         if (Math.abs(car1.x - 380) < 25 && Math.abs(car2.y - 280) < 25) {
             collisionOccurred = true;
-            car1.color = '#FFA500';
-            car2.color = '#FFA500';
             car1.speed = 0;
             car2.speed = 0;
+            
+            // Tocar som de colisão APENAS no momento da colisão
+            playCrashSound();
+            
+            // Criar fumaça na colisão
+            createCollisionSmoke();
             
             victimStatus = generateVictimStatus();
             victimStatusText.textContent = victimStatus;
             
-            // Tocar som de colisão
-            playCrashSound();
-            
             addEvent('🚨 COLISÃO DETECTADA no cruzamento!', 'collision');
-            addEvent('🚗 Veículo A (horizontal) avançou o cruzamento', 'collision');
-            addEvent('🚙 Veículo B (vertical) trafegava na via perpendicular', 'collision');
+            addEvent(`🚗 ${car1.type} ${car1.color} x ${car2.type} ${car2.color}`, 'collision');
             addEvent(`👤 Status da vítima: ${victimStatus}`, 'collision');
             
             setTimeout(() => {
@@ -159,44 +256,36 @@ function checkCollision() {
     }
 }
 
-// Chamar ambulância
 function callAmbulance() {
     if (!ambulanceActive) {
         ambulanceActive = true;
         ambulance.active = true;
         ambulance.state = 'coming';
         ambulance.stage = 'exiting';
-        
-        // Posição inicial: estacionamento do hospital
         ambulance.x = 710;
         ambulance.y = 515;
         ambulance.orientation = 'horizontal';
         
-        // Tocar sirene quando a ambulância for acionada
         playSirene();
         
         addEvent('🚑 AMBULÂNCIA acionada - Saindo do estacionamento', 'ambulance');
     }
 }
 
-// Mover ambulância
 function moveAmbulance() {
     if (!ambulance.active) return;
     
-    const centerX = 380; // Centro do cruzamento (onde os carros colidiram)
+    const centerX = 380;
     const centerY = 280;
     const speed = 2;
-    const safeDistance = 40; // Distância segura para parar antes do acidente
+    const safeDistance = 40;
     
-    // Pontos de referência
-    const roadEntryX = 360; // Ponto onde entra na rua (próximo ao hospital)
-    const roadY = 400; // Altura onde termina o estacionamento e começa a rua
-    const accidentY = centerY + safeDistance; // Posição Y para parar antes do acidente (320)
-    const hospitalReturnY = 500; // Altura para voltar ao estacionamento
+    const roadEntryX = 360;
+    const accidentY = centerY + safeDistance;
+    const hospitalReturnY = 500;
     
     switch(ambulance.state) {
         case 'coming':
-            // ESTÁGIO 1: Saindo do estacionamento (horizontal para esquerda)
             if (ambulance.stage === 'exiting') {
                 if (ambulance.x > roadEntryX) {
                     ambulance.x -= speed;
@@ -205,7 +294,6 @@ function moveAmbulance() {
                     ambulance.stage = 'onRoad';
                 }
             }
-            // ESTÁGIO 2: Subindo a rua em direção ao acidente (vertical para cima)
             else if (ambulance.stage === 'onRoad') {
                 if (ambulance.y > accidentY) {
                     ambulance.y -= speed;
@@ -214,7 +302,6 @@ function moveAmbulance() {
                     ambulance.stage = 'approaching';
                 }
             }
-            // ESTÁGIO 3: Aproximação final do acidente (horizontal para esquerda)
             else if (ambulance.stage === 'approaching') {
                 if (ambulance.x > centerX) {
                     ambulance.x -= speed;
@@ -234,7 +321,6 @@ function moveAmbulance() {
             break;
             
         case 'leaving':
-            // ESTÁGIO 1: Saindo do acidente (horizontal para direita)
             if (ambulance.stage === 'returning') {
                 if (ambulance.x < roadEntryX) {
                     ambulance.x += speed;
@@ -243,7 +329,6 @@ function moveAmbulance() {
                     ambulance.stage = 'goingDown';
                 }
             }
-            // ESTÁGIO 2: Descendo a rua (vertical para baixo)
             else if (ambulance.stage === 'goingDown') {
                 if (ambulance.y < hospitalReturnY) {
                     ambulance.y += speed;
@@ -252,7 +337,6 @@ function moveAmbulance() {
                     ambulance.stage = 'parking';
                 }
             }
-            // ESTÁGIO 3: Entrando no estacionamento (horizontal para direita)
             else if (ambulance.stage === 'parking') {
                 if (ambulance.x < 710) {
                     ambulance.x += speed;
@@ -260,10 +344,7 @@ function moveAmbulance() {
                 } else {
                     ambulance.active = false;
                     ambulanceActive = false;
-                    
-                    // Parar sirene quando estacionar
                     stopSirene();
-                    
                     addEvent('🏥 Ambulância estacionada no hospital', 'system');
                 }
             }
@@ -271,22 +352,32 @@ function moveAmbulance() {
     }
 }
 
-// Mover carros
 function moveCars() {
     if (!collisionOccurred) {
         if (car1.active) {
             car1.x += car1.speed;
-            if (car1.x > 800) car1.x = 100;
+            if (car1.x > 800) {
+                car1.x = 100;
+                let newCar = randomCar();
+                car1.color = newCar.color;
+                car1.type = newCar.type;
+                car1.speed = 1.5 + Math.random();
+            }
         }
         if (car2.active) {
             car2.y += car2.speed;
-            if (car2.y > 600) car2.y = 100;
+            if (car2.y > 600) {
+                car2.y = 100;
+                let newCar = randomCar();
+                car2.color = newCar.color;
+                car2.type = newCar.type;
+                car2.speed = 1.5 + Math.random();
+            }
         }
         checkCollision();
     }
 }
 
-// Desenhar estabelecimentos
 function drawEstablishments() {
     // Posto de gasolina
     ctx.fillStyle = '#CCCCCC';
@@ -300,7 +391,7 @@ function drawEstablishments() {
     ctx.fillRect(20, 110, 100, 10);
     ctx.font = 'bold 10px "Courier New"';
     ctx.fillStyle = '#FFFF00';
-    ctx.fillText('GAS', 45, 135);
+    ctx.fillText('GAS', 45, 118);
     
     // Restaurante
     ctx.fillStyle = '#8B4513';
@@ -318,8 +409,8 @@ function drawEstablishments() {
     ctx.fillRect(720, 140, 25, 25);
     ctx.font = 'bold 12px "Courier New"';
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText('REST', 685, 180);
-    ctx.fillText('🍔', 710, 200);
+    ctx.fillText('REST', 685, 135);
+    ctx.fillText('🍔', 715, 134);
     
     // Loja de conveniência
     ctx.fillStyle = '#4169E1';
@@ -331,33 +422,26 @@ function drawEstablishments() {
     ctx.fillRect(75, 430, 30, 25);
     ctx.font = 'bold 10px "Courier New"';
     ctx.fillStyle = '#FFFFFF';
-    ctx.fillText('24H', 45, 450);
+    ctx.fillText('24H', 45, 410);
     
-    // HOSPITAL COM ESTACIONAMENTO
+    // HOSPITAL
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(650, 400, 120, 80);
-    
-    // Cruz vermelha
     ctx.fillStyle = '#FF0000';
     ctx.fillRect(690, 425, 40, 10);
     ctx.fillRect(705, 410, 10, 40);
-    
-    // Telhado
     ctx.fillStyle = '#CCCCCC';
     ctx.fillRect(650, 390, 120, 15);
-    
-    // Placa do hospital
     ctx.font = 'bold 12px "Courier New"';
     ctx.fillStyle = '#FF0000';
-    ctx.fillText('HOSP', 680, 460);
+    ctx.fillText('HOSP', 680, 403);
     
-    // ESTACIONAMENTO
+    // Estacionamento
     ctx.fillStyle = '#444444';
     ctx.globalAlpha = 0.3;
     ctx.fillRect(640, 500, 140, 40);
     ctx.globalAlpha = 1.0;
     
-    // Linhas das vagas
     ctx.strokeStyle = '#FFFF00';
     ctx.lineWidth = 1;
     ctx.globalAlpha = 0.5;
@@ -369,19 +453,16 @@ function drawEstablishments() {
     }
     ctx.globalAlpha = 1.0;
     
-    // Vaga da ambulância
     ctx.font = '10px "Courier New"';
     ctx.fillStyle = '#FFFFFF';
     ctx.fillText('A', 715, 525);
     
-    // Carros estacionados
     ctx.fillStyle = '#333333';
     ctx.fillRect(660, 515, 25, 12);
     ctx.fillStyle = '#666666';
     ctx.fillRect(700, 515, 25, 12);
 }
 
-// Desenhar árvores
 function drawTrees() {
     // Árvores canto superior esquerdo
     for (let i = 0; i < 3; i++) {
@@ -434,7 +515,6 @@ function drawTrees() {
     }
 }
 
-// Desenhar via
 function drawDroneView() {
     ctx.fillStyle = '#0a0a0a';
     ctx.fillRect(0, 0, 800, 600);
@@ -524,9 +604,21 @@ function drawDroneView() {
     }
     ctx.globalAlpha = 1.0;
     
+    // Desenhar fumaça
+    smokeParticles = smokeParticles.filter(p => p.life > 0);
+    smokeParticles.forEach(p => {
+        p.update();
+        p.draw();
+    });
+    
+    // Adicionar fumaça contínua durante o acidente
+    if (collisionOccurred && Math.random() < 0.3) {
+        smokeParticles.push(new SmokeParticle(380, 280));
+    }
+    
     // Carros
-    if (car1.active) drawCar(car1.x, car1.y, car1.color, true);
-    if (car2.active) drawCar(car2.x, car2.y, car2.color, false);
+    if (car1.active) drawCar(car1.x, car1.y, car1.color, true, car1.type);
+    if (car2.active) drawCar(car2.x, car2.y, car2.color, false, car2.type);
     
     // Ambulância
     if (ambulance.active) {
@@ -541,8 +633,7 @@ function drawDroneView() {
     ctx.fillText('ALT: 120m | ZOOM: 2x', 20, 50);
 }
 
-// Desenhar carro
-function drawCar(x, y, color, isHorizontal) {
+function drawCar(x, y, color, isHorizontal, type) {
     ctx.fillStyle = color;
     ctx.shadowColor = color;
     ctx.shadowBlur = 10;
@@ -573,7 +664,6 @@ function drawCar(x, y, color, isHorizontal) {
     ctx.shadowBlur = 0;
 }
 
-// Desenhar ambulância
 function drawAmbulance(x, y, orientation) {
     ctx.shadowColor = '#FFFFFF';
     ctx.shadowBlur = 15;
@@ -618,18 +708,28 @@ function drawAmbulance(x, y, orientation) {
     ctx.shadowBlur = 0;
 }
 
-// Reiniciar simulação
 function restartSimulation() {
     simulationRunning = true;
     collisionOccurred = false;
     ambulanceActive = false;
     ambulance.active = false;
     
-    // Parar todos os sons ao reiniciar
+    // Limpar fumaça
+    smokeParticles = [];
+    
     stopAllSounds();
     
-    car1 = { x: 100, y: 280, speed: 2, active: true, color: '#FF0000' };
-    car2 = { x: 380, y: 100, speed: 2, active: true, color: '#0000FF' };
+    let newCar1 = randomCar();
+    let newCar2 = randomCar();
+    
+    car1 = { 
+        x: 100, y: 280, speed: 1.5 + Math.random(), active: true, 
+        color: newCar1.color, type: newCar1.type 
+    };
+    car2 = { 
+        x: 380, y: 100, speed: 1.5 + Math.random(), active: true, 
+        color: newCar2.color, type: newCar2.type 
+    };
     
     eventLog = [];
     reportLog.innerHTML = '<div class="log-entry system"><span class="log-time">[00:00:00]</span><span class="log-message">Sistema inicializado</span></div>';
@@ -657,11 +757,9 @@ function simulate() {
 
 // Event listeners
 restartBtn.addEventListener('click', restartSimulation);
-
-// Inicializar áudios quando a página carregar
 window.addEventListener('load', initAudios);
 
 // Iniciar simulação
-addEvent('🚁 Sistema de monitoramento ativado - Modo Drone', 'system');
+addEvent('🚁 Sistema de monitoramento ativado', 'system');
 simulate();
 setInterval(updateTime, 1000);
