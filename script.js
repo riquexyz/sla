@@ -77,14 +77,18 @@ function randomCar() {
 
 // car1 = car going RIGHT on horizontal road (bottom lane y~276)
 // car2 = motorcycle going DOWN on vertical road (right lane x~375)
+// Velocidades sincronizadas: os dois chegam ao cruzamento no mesmo frame
+const CAR1_SPEED = 1.8;
+const CAR2_SPEED = 1.3821; // 1.8 * (215/280) — mesma quantidade de frames
+
 let car1 = { 
-    x: 100, y: 276, speed: 1.5 + Math.random(), active: true, 
+    x: 100, y: 276, speed: CAR1_SPEED, active: true, 
     color: carColors[Math.floor(Math.random() * carColors.length)],
     type: carTypes[Math.floor(Math.random() * carTypes.length)]
 };
 
 let car2 = { 
-    x: 375, y: 60, speed: 1.5 + Math.random(), active: true, 
+    x: 375, y: 60, speed: CAR2_SPEED, active: true, 
     color: carColors[Math.floor(Math.random() * carColors.length)],
     type: 'Moto'
 };
@@ -192,17 +196,67 @@ window.testarSirene = function() {
     setTimeout(stopSirene, 3000);
 };
 
-function updateTime() {
-    const now = new Date();
-    const hours = String(now.getHours()).padStart(2, '0');
-    const minutes = String(now.getMinutes()).padStart(2, '0');
-    const seconds = String(now.getSeconds()).padStart(2, '0');
-    currentTimeDisplay.textContent = `${hours}:${minutes}:${seconds}`;
+// ===== RELÓGIO DA SIMULAÇÃO =====
+// Cada evento chave tem um horário pré-definido e plausível.
+// O relógio avança em tempo real, mas começa em SIM_START e
+// "pula" para o horário correto quando um evento importante ocorre.
+
+const SIM_START_H = 14, SIM_START_M = 28, SIM_START_S = 12;
+
+// Horários planejados para cada evento (em segundos desde meia-noite)
+const EVENT_TIMES = {
+    collision:          toSec(14, 30,  0),
+    ambulanceCalled:    toSec(14, 30, 45),
+    ambulanceArrived:   toSec(14, 32,  0),
+    ambulanceLeaving:   toSec(14, 35,  0),
+    ambulanceParked:    toSec(14, 37, 30),
+};
+
+function toSec(h, m, s) { return h * 3600 + m * 60 + s; }
+
+// Estado do relógio
+let simClockSec = toSec(SIM_START_H, SIM_START_M, SIM_START_S);
+let lastWallMs  = Date.now();
+
+function tickSimClock() {
+    const now = Date.now();
+    const elapsed = Math.floor((now - lastWallMs) / 1000);
+    if (elapsed > 0) {
+        simClockSec += elapsed;
+        lastWallMs  += elapsed * 1000;
+    }
 }
 
-function addEvent(message, type = 'system') {
-    const now = new Date();
-    const time = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+function jumpSimTimeTo(eventKey) {
+    // Avança o relógio para o horário do evento (nunca volta no tempo)
+    const target = EVENT_TIMES[eventKey];
+    if (target && target > simClockSec) {
+        simClockSec = target;
+        lastWallMs  = Date.now();
+    }
+}
+
+function simTimeStr(offsetSec = 0) {
+    tickSimClock();
+    const total = simClockSec + offsetSec;
+    const h = Math.floor(total / 3600) % 24;
+    const m = Math.floor((total % 3600) / 60);
+    const s = total % 60;
+    return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+}
+
+function resetSimClock() {
+    simClockSec = toSec(SIM_START_H, SIM_START_M, SIM_START_S);
+    lastWallMs  = Date.now();
+}
+
+function updateTime() {
+    currentTimeDisplay.textContent = simTimeStr();
+}
+
+function addEvent(message, type = 'system', eventKey = null) {
+    if (eventKey) jumpSimTimeTo(eventKey);
+    const time = simTimeStr();
     
     const logEntry = document.createElement('div');
     logEntry.className = `log-entry ${type}`;
@@ -306,11 +360,12 @@ function checkCollision() {
             
             playCrashSound();
             createCollisionSmoke();
+            panicNPCs();
             
             victimStatus = generateVictimStatus();
             // UI already updated by generateVictimStatus -> updateSeverityUI
             
-            addEvent('🚨 COLISÃO DETECTADA no cruzamento!', 'collision');
+            addEvent('🚨 COLISÃO DETECTADA no cruzamento!', 'collision', 'collision');
             addEvent(`🚗 ${car1.type} x 🏍️ Moto`, 'collision');
             addEvent(`👤 Status da vítima: ${victimStatus}`, 'collision');
             
@@ -332,7 +387,7 @@ function callAmbulance() {
         ambulance.direction = 'left'; // left | right | up | down
         
         playSirene();
-        addEvent('🚑 AMBULÂNCIA acionada - Saindo do estacionamento', 'ambulance');
+        addEvent('🚑 AMBULÂNCIA acionada - Saindo do estacionamento', 'ambulance', 'ambulanceCalled');
     }
 }
 
@@ -378,11 +433,11 @@ function moveAmbulance() {
                     ambulance.y = accidentY;
                     ambulance.state = 'stopped';
                     ambulance.stage = 'stopped';
-                    addEvent('🚑 AMBULÂNCIA chegou ao local do acidente', 'ambulance');
+                    addEvent('🚑 AMBULÂNCIA chegou ao local do acidente', 'ambulance', 'ambulanceArrived');
                     setTimeout(() => {
                         ambulance.state = 'leaving';
                         ambulance.stage = 'goingDown';
-                        addEvent('✅ Atendimento realizado, ambulância voltando', 'ambulance');
+                        addEvent('✅ Atendimento realizado, ambulância voltando', 'ambulance', 'ambulanceLeaving');
                     }, 3000);
                 }
             }
@@ -409,7 +464,7 @@ function moveAmbulance() {
                     ambulance.active = false;
                     ambulanceActive = false;
                     stopSirene();
-                    addEvent('🏥 Ambulância estacionada no hospital', 'system');
+                    addEvent('🏥 Ambulância estacionada no hospital', 'system', 'ambulanceParked');
                 }
             }
             break;
@@ -421,21 +476,21 @@ function moveCars() {
         if (car1.active) {
             car1.x += car1.speed;
             if (car1.x > 800) {
-                car1.x = -50;
+                car1.x = 100;
+                car1.speed = CAR1_SPEED;
                 let newCar = randomCar();
                 car1.color = newCar.color;
                 car1.type = newCar.type;
-                car1.speed = 1.5 + Math.random();
             }
         }
         if (car2.active) {
             car2.y += car2.speed;
             if (car2.y > 620) {
-                car2.y = -50;
+                car2.y = 60;
+                car2.speed = CAR2_SPEED;
                 let newCar = randomCar();
                 car2.color = newCar.color;
                 car2.type = 'Moto';
-                car2.speed = 1.5 + Math.random();
             }
         }
         checkCollision();
@@ -688,6 +743,9 @@ function drawDroneView() {
     if (ambulance.active) {
         drawAmbulance(ambulance.x, ambulance.y, ambulance.direction);
     }
+    
+    // NPCs pedestres
+    drawNPCs();
     
     // Informações
     ctx.font = 'bold 14px "Courier New"';
@@ -1007,22 +1065,24 @@ function restartSimulation() {
     ambulance.direction = 'left';
     smokeParticles = [];
     
+    resetSimClock();
+    resetNPCs();
     stopAllSounds();
     
     let newCar1 = randomCar();
     let newCar2 = randomCar();
     
     car1 = { 
-        x: 100, y: 276, speed: 1.5 + Math.random(), active: true, 
+        x: 100, y: 276, speed: CAR1_SPEED, active: true, 
         color: newCar1.color, type: newCar1.type 
     };
     car2 = { 
-        x: 375, y: 60, speed: 1.5 + Math.random(), active: true, 
+        x: 375, y: 60, speed: CAR2_SPEED, active: true, 
         color: newCar2.color, type: 'Moto'
     };
     
     eventLog = [];
-    reportLog.innerHTML = '<div class="log-entry system"><span class="log-time">[00:00:00]</span><span class="log-message">Sistema inicializado</span></div>';
+    reportLog.innerHTML = `<div class="log-entry system"><span class="log-time">[${simTimeStr()}]</span><span class="log-message">Sistema inicializado</span></div>`;
     victimStatusText.textContent = '-';
     victimStatusText.style.color = '';
     victimStatusText.style.borderColor = '';
@@ -1035,11 +1095,193 @@ function restartSimulation() {
     addEvent('🔄 Simulação reiniciada', 'system');
 }
 
+// ===== SISTEMA DE NPCs (PEDESTRES) =====
+// Calçadas:
+//   horizontal superior: y = 210~250  → y central ≈ 228
+//   horizontal inferior: y = 350~390  → y central ≈ 368
+//   vertical esquerda:   x = 310~350  → x central ≈ 328
+//   vertical direita:    x = 450~490  → x central ≈ 468
+//
+// Cada NPC fica restrito à sua calçada e para antes do cruzamento.
+
+const SIDEWALKS = [
+    { axis: 'h', fixed: 228, min: 0,   max: 800, dir:  1 }, // superior →
+    { axis: 'h', fixed: 228, min: 0,   max: 800, dir: -1 }, // superior ←
+    { axis: 'h', fixed: 368, min: 0,   max: 800, dir:  1 }, // inferior →
+    { axis: 'h', fixed: 368, min: 0,   max: 800, dir: -1 }, // inferior ←
+    { axis: 'v', fixed: 328, min: 0,   max: 600, dir:  1 }, // esq ↓
+    { axis: 'v', fixed: 328, min: 0,   max: 600, dir: -1 }, // esq ↑
+    { axis: 'v', fixed: 468, min: 0,   max: 600, dir:  1 }, // dir ↓
+    { axis: 'v', fixed: 468, min: 0,   max: 600, dir: -1 }, // dir ↑
+];
+
+// Cruzamento proibido para pedestres (área da estrada)
+const CROSS_H_MIN = 310, CROSS_H_MAX = 450; // x proibido nas calçadas h
+const CROSS_V_MIN = 210, CROSS_V_MAX = 350; // y proibido nas calçadas v
+
+const NPC_COLORS = ['#FFD700','#FF69B4','#00BFFF','#98FB98','#FFA07A','#DDA0DD','#F0E68C','#87CEEB'];
+
+class NPC {
+    constructor() {
+        this.reset(true);
+    }
+
+    reset(randomStart = false) {
+        const sw = SIDEWALKS[Math.floor(Math.random() * SIDEWALKS.length)];
+        this.axis    = sw.axis;
+        this.fixed   = sw.fixed + (Math.random() - 0.5) * 10; // pequena variação lateral
+        this.dir     = sw.dir;
+        this.speed   = 0.4 + Math.random() * 0.5;
+        this.color   = NPC_COLORS[Math.floor(Math.random() * NPC_COLORS.length)];
+        this.panicking = false;
+        this.stopped   = false;
+
+        // Posição inicial: espalhar pela calçada, nunca dentro do cruzamento
+        if (this.axis === 'h') {
+            let x;
+            do { x = Math.random() * 800; }
+            while (x > CROSS_H_MIN - 20 && x < CROSS_H_MAX + 20);
+            this.pos = randomStart ? x : (this.dir > 0 ? 0 : 800);
+            this.y   = this.fixed;
+            this.x   = this.pos;
+        } else {
+            let y;
+            do { y = Math.random() * 600; }
+            while (y > CROSS_V_MIN - 20 && y < CROSS_V_MAX + 20);
+            this.pos = randomStart ? y : (this.dir > 0 ? 0 : 600);
+            this.x   = this.fixed;
+            this.y   = this.pos;
+        }
+    }
+
+    update() {
+        if (this.stopped && !this.panicking) return;
+
+        const spd = this.panicking ? this.speed * 2.5 : this.speed;
+
+        if (this.axis === 'h') {
+            // Parar antes do cruzamento (não na área da estrada)
+            if (!this.panicking) {
+                if (this.dir > 0 && this.x > CROSS_H_MIN - 15 && this.x < CROSS_H_MAX) {
+                    this.stopped = true; return;
+                }
+                if (this.dir < 0 && this.x < CROSS_H_MAX + 15 && this.x > CROSS_H_MIN) {
+                    this.stopped = true; return;
+                }
+            }
+            this.stopped = false;
+            this.x += this.dir * spd;
+            this.y  = this.fixed + Math.sin(this.x * 0.05) * 1.5; // leve bobbing
+            if (this.x > 820 || this.x < -20) this.reset();
+        } else {
+            if (!this.panicking) {
+                if (this.dir > 0 && this.y > CROSS_V_MIN - 15 && this.y < CROSS_V_MAX) {
+                    this.stopped = true; return;
+                }
+                if (this.dir < 0 && this.y < CROSS_V_MAX + 15 && this.y > CROSS_V_MIN) {
+                    this.stopped = true; return;
+                }
+            }
+            this.stopped = false;
+            this.y += this.dir * spd;
+            this.x  = this.fixed + Math.sin(this.y * 0.05) * 1.5;
+            if (this.y > 620 || this.y < -20) this.reset();
+        }
+    }
+
+    panic() {
+        this.panicking = true;
+        this.stopped   = false;
+        // Vira para longe do acidente
+        if (this.axis === 'h') this.dir = this.x < 400 ? -1 : 1;
+        else                   this.dir = this.y < 300 ? -1 : 1;
+    }
+
+    draw() {
+        ctx.save();
+
+        const facing = (this.axis === 'h') ? this.dir : (this.dir > 0 ? 1 : -1);
+        const walkCycle = Math.floor(Date.now() / 200) % 2; // leg alternation
+
+        // Shadow
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath();
+        ctx.ellipse(this.x, this.y + 7, 4, 2, 0, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Legs (animated)
+        ctx.strokeStyle = this.panicking ? '#FF4444' : '#555';
+        ctx.lineWidth = 1.5;
+        if (!this.stopped) {
+            const legSwing = walkCycle === 0 ? 3 : -3;
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y + 2);
+            ctx.lineTo(this.x - legSwing * facing, this.y + 7);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(this.x, this.y + 2);
+            ctx.lineTo(this.x + legSwing * facing, this.y + 7);
+            ctx.stroke();
+        } else {
+            // Standing still
+            ctx.beginPath();
+            ctx.moveTo(this.x - 2, this.y + 2);
+            ctx.lineTo(this.x - 2, this.y + 7);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(this.x + 2, this.y + 2);
+            ctx.lineTo(this.x + 2, this.y + 7);
+            ctx.stroke();
+        }
+
+        // Body
+        ctx.fillStyle = this.color;
+        ctx.beginPath();
+        ctx.roundRect(this.x - 3, this.y - 3, 6, 6, 1);
+        ctx.fill();
+
+        // Head
+        ctx.fillStyle = '#FFDAB9';
+        ctx.beginPath();
+        ctx.arc(this.x, this.y - 6, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Panic exclamation
+        if (this.panicking) {
+            ctx.fillStyle = '#FF0000';
+            ctx.font = 'bold 8px sans-serif';
+            ctx.fillText('!', this.x - 1, this.y - 12);
+        }
+
+        ctx.restore();
+    }
+}
+
+// Criar NPCs
+let npcs = Array.from({ length: 12 }, () => new NPC());
+
+function updateNPCs() {
+    npcs.forEach(n => n.update());
+}
+
+function drawNPCs() {
+    npcs.forEach(n => n.draw());
+}
+
+function panicNPCs() {
+    npcs.forEach(n => n.panic());
+}
+
+function resetNPCs() {
+    npcs = Array.from({ length: 12 }, () => new NPC());
+}
+
 // Loop principal
 function simulate() {
     if (!simulationRunning) return;
     
     updateTime();
+    updateNPCs();
     
     if (!collisionOccurred) {
         moveCars();
