@@ -75,16 +75,18 @@ function randomCar() {
     };
 }
 
+// car1 = car going RIGHT on horizontal road (bottom lane y~276)
+// car2 = motorcycle going DOWN on vertical road (right lane x~375)
 let car1 = { 
-    x: 100, y: 280, speed: 1.5 + Math.random(), active: true, 
+    x: 100, y: 276, speed: 1.5 + Math.random(), active: true, 
     color: carColors[Math.floor(Math.random() * carColors.length)],
     type: carTypes[Math.floor(Math.random() * carTypes.length)]
 };
 
 let car2 = { 
-    x: 380, y: 100, speed: 1.5 + Math.random(), active: true, 
+    x: 375, y: 60, speed: 1.5 + Math.random(), active: true, 
     color: carColors[Math.floor(Math.random() * carColors.length)],
-    type: carTypes[Math.floor(Math.random() * carTypes.length)]
+    type: 'Moto'
 };
 
 // Ambulância
@@ -93,8 +95,8 @@ let ambulance = {
     y: 0, 
     active: false, 
     state: 'coming',
-    orientation: 'horizontal',
-    stage: 'exiting'
+    direction: 'left',
+    stage: 'exitParking'
 };
 
 // Histórico de eventos
@@ -210,43 +212,106 @@ function addEvent(message, type = 'system') {
     reportLog.scrollTop = reportLog.scrollHeight;
 }
 
+const severityLevels = {
+    leve: {
+        label: 'LEVE',
+        color: '#00ff00',
+        bg: 'rgba(0,255,0,0.1)',
+        border: '#00ff00',
+        icon: '🟢',
+        statuses: [
+            'Vítima consciente - Escoriações leves',
+            'Ferimentos superficiais - Orientado',
+            'Dor leve - Sem perda de consciência',
+        ]
+    },
+    moderado: {
+        label: 'MODERADO',
+        color: '#FFB800',
+        bg: 'rgba(255,184,0,0.12)',
+        border: '#FFB800',
+        icon: '🟡',
+        statuses: [
+            'Suspeita de fratura - Imobilizado',
+            'Dor intensa - Consciente mas confuso',
+            'Possível traumatismo craniano leve',
+        ]
+    },
+    grave: {
+        label: 'GRAVE',
+        color: '#FF2222',
+        bg: 'rgba(255,34,34,0.12)',
+        border: '#FF2222',
+        icon: '🔴',
+        statuses: [
+            'Inconsciente - Prioridade máxima',
+            'Hemorragia - Atendimento urgente',
+            'Traumatismo severo - Suporte vital',
+        ]
+    }
+};
+
+let currentSeverity = null;
+
 function generateVictimStatus() {
-    const statuses = [
-        'Ferimentos leves - Consciente',
-        'Suspeita de fratura - Imobilizado',
-        'Ambulância a caminho - Prioridade máxima',
-        'Vítima consciente - Escoriações',
-        'Estado grave - Atendimento urgente'
-    ];
-    return statuses[Math.floor(Math.random() * statuses.length)];
+    const keys = Object.keys(severityLevels);
+    // Weighted: 40% leve, 35% moderado, 25% grave
+    const roll = Math.random();
+    const key = roll < 0.4 ? 'leve' : roll < 0.75 ? 'moderado' : 'grave';
+    const sev = severityLevels[key];
+    currentSeverity = key;
+    const desc = sev.statuses[Math.floor(Math.random() * sev.statuses.length)];
+    updateSeverityUI(key, desc);
+    return `${sev.icon} ${desc}`;
+}
+
+function updateSeverityUI(key, desc) {
+    const sev = severityLevels[key];
+    const box = document.getElementById('victimStatusText');
+    box.textContent = desc;
+    box.style.color = sev.color;
+    box.style.borderColor = sev.border;
+    box.style.background = sev.bg;
+    box.style.textShadow = `0 0 8px ${sev.color}44`;
+
+    const badge = document.getElementById('severityBadge');
+    badge.textContent = sev.label;
+    badge.style.color = sev.color;
+    badge.style.borderColor = sev.border;
+    badge.style.background = sev.bg;
+    badge.style.boxShadow = `0 0 10px ${sev.color}55`;
+    badge.style.display = 'inline-block';
+
+    // Animate badge pulse
+    badge.style.animation = 'none';
+    badge.offsetHeight; // reflow
+    badge.style.animation = 'severityPulse 1s ease-in-out 3';
 }
 
 // Criar fumaça na colisão
 function createCollisionSmoke() {
     for (let i = 0; i < 20; i++) {
-        smokeParticles.push(new SmokeParticle(380, 280));
+        smokeParticles.push(new SmokeParticle(390, 275));
     }
 }
 
-// Verificar colisão (SEM som antecipado)
+// Verificar colisão
 function checkCollision() {
     if (!collisionOccurred && car1.active && car2.active) {
-        if (Math.abs(car1.x - 380) < 25 && Math.abs(car2.y - 280) < 25) {
+        // car1 at intersection x~350-400, car2 at intersection y~250-300
+        if (car1.x > 350 && car1.x < 410 && car2.y > 240 && car2.y < 300) {
             collisionOccurred = true;
             car1.speed = 0;
             car2.speed = 0;
             
-            // Tocar som de colisão APENAS no momento da colisão
             playCrashSound();
-            
-            // Criar fumaça na colisão
             createCollisionSmoke();
             
             victimStatus = generateVictimStatus();
-            victimStatusText.textContent = victimStatus;
+            // UI already updated by generateVictimStatus -> updateSeverityUI
             
             addEvent('🚨 COLISÃO DETECTADA no cruzamento!', 'collision');
-            addEvent(`🚗 ${car1.type} ${car1.color} x ${car2.type} ${car2.color}`, 'collision');
+            addEvent(`🚗 ${car1.type} x 🏍️ Moto`, 'collision');
             addEvent(`👤 Status da vítima: ${victimStatus}`, 'collision');
             
             setTimeout(() => {
@@ -261,13 +326,12 @@ function callAmbulance() {
         ambulanceActive = true;
         ambulance.active = true;
         ambulance.state = 'coming';
-        ambulance.stage = 'exiting';
+        ambulance.stage = 'exitParking';
         ambulance.x = 710;
-        ambulance.y = 515;
-        ambulance.orientation = 'horizontal';
+        ambulance.y = 510;
+        ambulance.direction = 'left'; // left | right | up | down
         
         playSirene();
-        
         addEvent('🚑 AMBULÂNCIA acionada - Saindo do estacionamento', 'ambulance');
     }
 }
@@ -275,73 +339,73 @@ function callAmbulance() {
 function moveAmbulance() {
     if (!ambulance.active) return;
     
-    const centerX = 380;
-    const centerY = 280;
-    const speed = 2;
-    const safeDistance = 40;
-    
-    const roadEntryX = 360;
-    const accidentY = centerY + safeDistance;
-    const hospitalReturnY = 500;
-    
+    const speed = 2.5;
+    // Lanes:
+    // Horizontal road going ← : y = 325
+    // Horizontal road going → : y = 270
+    // Vertical road going ↑   : x = 428
+    const laneLeft  = 325;   // y para ir ←
+    const laneRight = 270;   // y para ir →  (volta)
+    const laneUp    = 428;   // x para ir ↑
+    const accidentY = 258;   // parar acima do cruzamento
+    const startX    = 710;   // posição X do estacionamento
+
+    // IDA: estacionamento → esquerda → cima (sem mais curvas)
+    // exitParking : x=710 → x=320 (well past the vertical road), y=510, dir ←
+    // toHorizLane : y=510 → y=325, x=320, dir ↑ (just going up to enter lane)
+    //   actually simpler: go left all the way to x=320 on parking row,
+    //   then go straight up from x=320 to accidentY (no extra turns)
+    // VOLTA: accidentY → y=350 (saindo da estrada) → vira direita → x=startX → desce → estacionamento
+
     switch(ambulance.state) {
         case 'coming':
-            if (ambulance.stage === 'exiting') {
-                if (ambulance.x > roadEntryX) {
+            if (ambulance.stage === 'exitParking') {
+                // Ir para esquerda no nível do estacionamento (y=510) até x=320
+                if (ambulance.x > 420) {
                     ambulance.x -= speed;
-                    ambulance.orientation = 'horizontal';
+                    ambulance.direction = 'left';
                 } else {
-                    ambulance.stage = 'onRoad';
+                    ambulance.x = 420;
+                    ambulance.stage = 'goingUp';
                 }
             }
-            else if (ambulance.stage === 'onRoad') {
+            else if (ambulance.stage === 'goingUp') {
+                // Subir direto de y=510 até accidentY — sem mais curvas
                 if (ambulance.y > accidentY) {
                     ambulance.y -= speed;
-                    ambulance.orientation = 'vertical';
+                    ambulance.direction = 'up';
                 } else {
-                    ambulance.stage = 'approaching';
-                }
-            }
-            else if (ambulance.stage === 'approaching') {
-                if (ambulance.x > centerX) {
-                    ambulance.x -= speed;
-                    ambulance.orientation = 'horizontal';
-                } else {
+                    ambulance.y = accidentY;
                     ambulance.state = 'stopped';
                     ambulance.stage = 'stopped';
                     addEvent('🚑 AMBULÂNCIA chegou ao local do acidente', 'ambulance');
-                    
                     setTimeout(() => {
                         ambulance.state = 'leaving';
-                        ambulance.stage = 'returning';
+                        ambulance.stage = 'goingDown';
                         addEvent('✅ Atendimento realizado, ambulância voltando', 'ambulance');
                     }, 3000);
                 }
             }
             break;
-            
+
         case 'leaving':
-            if (ambulance.stage === 'returning') {
-                if (ambulance.x < roadEntryX) {
-                    ambulance.x += speed;
-                    ambulance.orientation = 'horizontal';
-                } else {
-                    ambulance.stage = 'goingDown';
-                }
-            }
-            else if (ambulance.stage === 'goingDown') {
-                if (ambulance.y < hospitalReturnY) {
+            if (ambulance.stage === 'goingDown') {
+                // Descer de accidentY de volta a y=510 (mesmo x=320)
+                if (ambulance.y < 510) {
                     ambulance.y += speed;
-                    ambulance.orientation = 'vertical';
+                    ambulance.direction = 'down';
                 } else {
-                    ambulance.stage = 'parking';
+                    ambulance.y = 510;
+                    ambulance.stage = 'goingRight';
                 }
             }
-            else if (ambulance.stage === 'parking') {
-                if (ambulance.x < 710) {
+            else if (ambulance.stage === 'goingRight') {
+                // Ir para direita de x=320 até x=startX
+                if (ambulance.x < startX) {
                     ambulance.x += speed;
-                    ambulance.orientation = 'horizontal';
+                    ambulance.direction = 'right';
                 } else {
+                    ambulance.x = startX;
                     ambulance.active = false;
                     ambulanceActive = false;
                     stopSirene();
@@ -357,7 +421,7 @@ function moveCars() {
         if (car1.active) {
             car1.x += car1.speed;
             if (car1.x > 800) {
-                car1.x = 100;
+                car1.x = -50;
                 let newCar = randomCar();
                 car1.color = newCar.color;
                 car1.type = newCar.type;
@@ -366,11 +430,11 @@ function moveCars() {
         }
         if (car2.active) {
             car2.y += car2.speed;
-            if (car2.y > 600) {
-                car2.y = 100;
+            if (car2.y > 620) {
+                car2.y = -50;
                 let newCar = randomCar();
                 car2.color = newCar.color;
-                car2.type = newCar.type;
+                car2.type = 'Moto';
                 car2.speed = 1.5 + Math.random();
             }
         }
@@ -613,16 +677,16 @@ function drawDroneView() {
     
     // Adicionar fumaça contínua durante o acidente
     if (collisionOccurred && Math.random() < 0.3) {
-        smokeParticles.push(new SmokeParticle(380, 280));
+        smokeParticles.push(new SmokeParticle(390, 275));
     }
     
-    // Carros
+    // Carros e moto
     if (car1.active) drawCar(car1.x, car1.y, car1.color, true, car1.type);
-    if (car2.active) drawCar(car2.x, car2.y, car2.color, false, car2.type);
+    if (car2.active) drawMotorcycle(car2.x, car2.y, car2.color, false);
     
     // Ambulância
     if (ambulance.active) {
-        drawAmbulance(ambulance.x, ambulance.y, ambulance.orientation);
+        drawAmbulance(ambulance.x, ambulance.y, ambulance.direction);
     }
     
     // Informações
@@ -634,78 +698,305 @@ function drawDroneView() {
 }
 
 function drawCar(x, y, color, isHorizontal, type) {
-    ctx.fillStyle = color;
+    ctx.save();
     ctx.shadowColor = color;
-    ctx.shadowBlur = 10;
-    
+    ctx.shadowBlur = 12;
+
     if (isHorizontal) {
-        ctx.fillRect(x, y, 40, 20);
-        ctx.fillStyle = '#333333';
-        ctx.fillRect(x + 5, y + 2, 8, 3);
-        ctx.fillRect(x + 27, y + 2, 8, 3);
-        ctx.fillStyle = '#87CEEB';
-        ctx.fillRect(x + 5, y + 12, 10, 5);
-        ctx.fillRect(x + 25, y + 12, 10, 5);
-        ctx.fillStyle = '#FFFF00';
-        ctx.fillRect(x + 38, y + 5, 2, 5);
-        ctx.fillRect(x, y + 5, 2, 5);
+        // Body
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.roundRect(x, y + 4, 44, 16, 3);
+        ctx.fill();
+
+        // Roof cabin
+        const roofGrad = ctx.createLinearGradient(x + 10, y, x + 34, y + 8);
+        roofGrad.addColorStop(0, lightenColor(color, 30));
+        roofGrad.addColorStop(1, color);
+        ctx.fillStyle = roofGrad;
+        ctx.beginPath();
+        ctx.roundRect(x + 10, y, 24, 10, [3, 3, 0, 0]);
+        ctx.fill();
+
+        // Windshield front
+        ctx.fillStyle = 'rgba(135,206,235,0.8)';
+        ctx.beginPath();
+        ctx.roundRect(x + 28, y + 1, 8, 8, 2);
+        ctx.fill();
+
+        // Rear window
+        ctx.fillStyle = 'rgba(135,206,235,0.6)';
+        ctx.beginPath();
+        ctx.roundRect(x + 10, y + 1, 8, 8, 2);
+        ctx.fill();
+
+        // Wheels
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.ellipse(x + 8, y + 20, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + 36, y + 20, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#888';
+        ctx.beginPath(); ctx.ellipse(x + 8, y + 20, 2.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + 36, y + 20, 2.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+
+        // Headlights
+        ctx.fillStyle = '#FFFF99';
+        ctx.shadowColor = '#FFFF00';
+        ctx.shadowBlur = 8;
+        ctx.fillRect(x + 42, y + 6, 3, 4);
+        // Taillights
+        ctx.fillStyle = '#FF4444';
+        ctx.shadowColor = '#FF0000';
+        ctx.fillRect(x - 1, y + 6, 3, 4);
+
     } else {
-        ctx.fillRect(x, y, 20, 40);
-        ctx.fillStyle = '#333333';
-        ctx.fillRect(x + 2, y + 5, 3, 8);
-        ctx.fillRect(x + 2, y + 27, 3, 8);
-        ctx.fillStyle = '#87CEEB';
-        ctx.fillRect(x + 2, y + 5, 5, 10);
-        ctx.fillRect(x + 2, y + 25, 5, 10);
-        ctx.fillStyle = '#FFFF00';
-        ctx.fillRect(x + 5, y + 38, 5, 2);
-        ctx.fillRect(x + 5, y, 5, 2);
+        // Vertical (going down)
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.roundRect(x + 4, y, 16, 44, 3);
+        ctx.fill();
+
+        // Roof cabin
+        const roofGrad2 = ctx.createLinearGradient(x, y + 10, x + 8, y + 34);
+        roofGrad2.addColorStop(0, lightenColor(color, 30));
+        roofGrad2.addColorStop(1, color);
+        ctx.fillStyle = roofGrad2;
+        ctx.beginPath();
+        ctx.roundRect(x, y + 10, 10, 24, [3, 3, 0, 0]);
+        ctx.fill();
+
+        // Windshield front
+        ctx.fillStyle = 'rgba(135,206,235,0.8)';
+        ctx.beginPath();
+        ctx.roundRect(x + 1, y + 28, 8, 8, 2);
+        ctx.fill();
+
+        // Rear window
+        ctx.fillStyle = 'rgba(135,206,235,0.6)';
+        ctx.beginPath();
+        ctx.roundRect(x + 1, y + 10, 8, 8, 2);
+        ctx.fill();
+
+        // Wheels
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.ellipse(x + 20, y + 8, 4, 5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + 20, y + 36, 4, 5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#888';
+        ctx.beginPath(); ctx.ellipse(x + 20, y + 8, 2, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(x + 20, y + 36, 2, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+
+        // Headlights (front = bottom since going down)
+        ctx.fillStyle = '#FFFF99';
+        ctx.shadowColor = '#FFFF00';
+        ctx.shadowBlur = 8;
+        ctx.fillRect(x + 6, y + 42, 4, 3);
+        // Taillights (top)
+        ctx.fillStyle = '#FF4444';
+        ctx.shadowColor = '#FF0000';
+        ctx.fillRect(x + 6, y - 1, 4, 3);
     }
-    ctx.shadowBlur = 0;
+
+    ctx.restore();
 }
 
-function drawAmbulance(x, y, orientation) {
-    ctx.shadowColor = '#FFFFFF';
-    ctx.shadowBlur = 15;
-    
-    if (orientation === 'horizontal') {
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(x - 12, y - 6, 35, 14);
-        ctx.fillStyle = '#FF0000';
-        ctx.fillRect(x, y - 2, 8, 4);
-        ctx.fillRect(x - 2, y - 4, 12, 2);
-        ctx.fillStyle = '#0000FF';
+function lightenColor(hex, amount) {
+    const num = parseInt(hex.replace('#', ''), 16);
+    const r = Math.min(255, (num >> 16) + amount);
+    const g = Math.min(255, ((num >> 8) & 0xff) + amount);
+    const b = Math.min(255, (num & 0xff) + amount);
+    return `rgb(${r},${g},${b})`;
+}
+
+function drawMotorcycle(x, y, color, isHorizontal) {
+    ctx.save();
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+
+    if (isHorizontal) {
+        // Main body / frame
+        ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(x - 16, y - 2, 3, 0, Math.PI * 2);
+        ctx.roundRect(x + 6, y + 5, 22, 8, 3);
         ctx.fill();
-        ctx.fillStyle = '#FF0000';
+
+        // Fuel tank
+        const tankGrad = ctx.createLinearGradient(x + 10, y + 3, x + 24, y + 10);
+        tankGrad.addColorStop(0, lightenColor(color, 40));
+        tankGrad.addColorStop(1, color);
+        ctx.fillStyle = tankGrad;
         ctx.beginPath();
-        ctx.arc(x + 12, y - 4, 2, 0, Math.PI * 2);
+        ctx.ellipse(x + 18, y + 6, 7, 4, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = '#0000FF';
+
+        // Rider helmet
+        ctx.fillStyle = '#222';
         ctx.beginPath();
-        ctx.arc(x + 12, y + 1, 2, 0, Math.PI * 2);
+        ctx.arc(x + 22, y + 3, 5, 0, Math.PI * 2);
         ctx.fill();
+        ctx.fillStyle = '#87CEEB';
+        ctx.beginPath();
+        ctx.arc(x + 23, y + 2, 3, 0, Math.PI * 1.2);
+        ctx.fill();
+
+        // Wheels
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 3;
+        ctx.fillStyle = '#222';
+        ctx.beginPath(); ctx.arc(x + 7, y + 14, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(x + 29, y + 14, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#666';
+        ctx.beginPath(); ctx.arc(x + 7, y + 14, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x + 29, y + 14, 2.5, 0, Math.PI * 2); ctx.fill();
+
+        // Handlebar
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x + 25, y + 1);
+        ctx.lineTo(x + 29, y + 1);
+        ctx.stroke();
+
+        // Exhaust
+        ctx.strokeStyle = '#999';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 8, y + 11);
+        ctx.lineTo(x + 4, y + 13);
+        ctx.stroke();
+
+        // Headlight
+        ctx.fillStyle = '#FFFF99';
+        ctx.shadowColor = '#FFFF00';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(x + 33, y + 10, 2, 0, Math.PI * 2);
+        ctx.fill();
+
     } else {
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(x - 6, y - 12, 14, 35);
-        ctx.fillStyle = '#FF0000';
-        ctx.fillRect(x - 2, y, 5, 7);
-        ctx.fillRect(x - 4, y - 2, 9, 12);
-        ctx.fillStyle = '#0000FF';
+        // Vertical motorcycle (going down)
+        // Body frame - narrow strip in the center
+        ctx.fillStyle = color;
         ctx.beginPath();
-        ctx.arc(x - 2, y - 17, 3, 0, Math.PI * 2);
+        ctx.roundRect(x + 6, y + 10, 6, 16, 2);
         ctx.fill();
-        ctx.fillStyle = '#FF0000';
+
+        // Fuel tank (wider bump in middle)
+        const tankGrad2 = ctx.createLinearGradient(x + 3, y + 14, x + 14, y + 22);
+        tankGrad2.addColorStop(0, lightenColor(color, 40));
+        tankGrad2.addColorStop(1, color);
+        ctx.fillStyle = tankGrad2;
         ctx.beginPath();
-        ctx.arc(x - 4, y + 13, 2, 0, Math.PI * 2);
+        ctx.ellipse(x + 9, y + 18, 5, 6, 0, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = '#0000FF';
+
+        // Rider body
+        ctx.fillStyle = '#333';
         ctx.beginPath();
-        ctx.arc(x + 1, y + 13, 2, 0, Math.PI * 2);
+        ctx.roundRect(x + 5, y + 20, 8, 10, 2);
+        ctx.fill();
+
+        // Rider helmet
+        ctx.fillStyle = '#222';
+        ctx.beginPath();
+        ctx.arc(x + 9, y + 22, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = '#87CEEB';
+        ctx.beginPath();
+        ctx.arc(x + 10, y + 21, 2.5, 0.3, Math.PI * 1.4);
+        ctx.fill();
+
+        // Wheels - clearly OUTSIDE the body (top wheel at y-2, bottom at y+34)
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = '#333';
+        ctx.fillStyle = '#111';
+        // Front wheel (bottom, direction of travel)
+        ctx.beginPath(); ctx.arc(x + 9, y + 34, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#666';
+        ctx.beginPath(); ctx.arc(x + 9, y + 34, 2, 0, Math.PI * 2); ctx.fill();
+        // Rear wheel (top)
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.arc(x + 9, y + 2, 5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#666';
+        ctx.beginPath(); ctx.arc(x + 9, y + 2, 2, 0, Math.PI * 2); ctx.fill();
+
+        // Fork (front suspension line)
+        ctx.strokeStyle = '#888';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x + 9, y + 10);
+        ctx.lineTo(x + 9, y + 29);
+        ctx.stroke();
+
+        // Headlight bottom (going down)
+        ctx.fillStyle = '#FFFF99';
+        ctx.shadowColor = '#FFFF00';
+        ctx.shadowBlur = 8;
+        ctx.beginPath();
+        ctx.arc(x + 9, y + 40, 2, 0, Math.PI * 2);
         ctx.fill();
     }
+
+    ctx.restore();
+}
+
+function drawAmbulance(x, y, direction) {
+    ctx.save();
+    const flash = Math.floor(Date.now() / 300) % 2 === 0;
+
+    // Rotation angle based on direction
+    // Base drawing: ambulance facing RIGHT (→), cab on right side
+    const angles = { right: 0, down: Math.PI / 2, left: Math.PI, up: -Math.PI / 2 };
+    const angle = angles[direction] ?? 0;
+
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+
+    // Glow
+    ctx.shadowColor = flash ? '#FF0000' : '#0000FF';
+    ctx.shadowBlur = 20;
+
+    // Body (facing right: extends left from center)
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.roundRect(-20, -9, 44, 18, 3);
+    ctx.fill();
+
+    // Red stripe
+    ctx.fillStyle = '#FF2222';
+    ctx.fillRect(-20, -3, 44, 6);
+
+    // Cross symbol (on the side panel)
+    ctx.fillStyle = '#FF0000';
+    ctx.fillRect(-8, -7, 5, 14);
+    ctx.fillRect(-12, -3, 13, 5);
+
+    // Cab window (front = right side)
+    ctx.fillStyle = 'rgba(135,206,235,0.85)';
+    ctx.beginPath();
+    ctx.roundRect(14, -7, 10, 14, 2);
+    ctx.fill();
+
+    // Wheels (bottom of vehicle, below center)
+    ctx.fillStyle = '#111';
+    ctx.beginPath(); ctx.ellipse(-8, 10, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(14, 10, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#555';
+    ctx.beginPath(); ctx.ellipse(-8, 10, 2, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(14, 10, 2, 1.5, 0, 0, Math.PI * 2); ctx.fill();
+
+    // Siren lights on roof
     ctx.shadowBlur = 0;
+    ctx.fillStyle = flash ? '#FF0000' : '#330000';
+    ctx.beginPath(); ctx.arc(-2, -12, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = flash ? '#0044FF' : '#000033';
+    ctx.beginPath(); ctx.arc(8, -12, 3, 0, Math.PI * 2); ctx.fill();
+
+    // Headlight (front = right)
+    ctx.fillStyle = '#FFFFAA';
+    ctx.shadowColor = '#FFFF00';
+    ctx.shadowBlur = 14;
+    ctx.beginPath(); ctx.arc(25, 0, 3, 0, Math.PI * 2); ctx.fill();
+
+    ctx.restore();
 }
 
 function restartSimulation() {
@@ -713,8 +1004,7 @@ function restartSimulation() {
     collisionOccurred = false;
     ambulanceActive = false;
     ambulance.active = false;
-    
-    // Limpar fumaça
+    ambulance.direction = 'left';
     smokeParticles = [];
     
     stopAllSounds();
@@ -723,17 +1013,24 @@ function restartSimulation() {
     let newCar2 = randomCar();
     
     car1 = { 
-        x: 100, y: 280, speed: 1.5 + Math.random(), active: true, 
+        x: 100, y: 276, speed: 1.5 + Math.random(), active: true, 
         color: newCar1.color, type: newCar1.type 
     };
     car2 = { 
-        x: 380, y: 100, speed: 1.5 + Math.random(), active: true, 
-        color: newCar2.color, type: newCar2.type 
+        x: 375, y: 60, speed: 1.5 + Math.random(), active: true, 
+        color: newCar2.color, type: 'Moto'
     };
     
     eventLog = [];
     reportLog.innerHTML = '<div class="log-entry system"><span class="log-time">[00:00:00]</span><span class="log-message">Sistema inicializado</span></div>';
     victimStatusText.textContent = '-';
+    victimStatusText.style.color = '';
+    victimStatusText.style.borderColor = '';
+    victimStatusText.style.background = '';
+    victimStatusText.style.textShadow = '';
+    const badge = document.getElementById('severityBadge');
+    badge.style.display = 'none';
+    currentSeverity = null;
     
     addEvent('🔄 Simulação reiniciada', 'system');
 }
